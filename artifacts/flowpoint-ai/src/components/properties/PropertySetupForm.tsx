@@ -8,14 +8,18 @@ import { UnitSetupModal, type UnitSavePayload } from '@/components/PropertyUnitM
 import {
   APARTMENT_BUILDING_FACILITIES,
   blankProperty,
+  COMMERCIAL_FACILITIES,
+  HOSPITALITY_SPACE_TYPES,
   HOME_FACILITIES,
+  MIXED_USE_COMPONENTS,
   PROPERTY_CATEGORIES,
   PROPERTY_TYPES_BY_CATEGORY,
+  RETAIL_CENTER_TYPES,
   type Property,
   type PropertyDraft,
 } from '@/lib/propertiesTypes';
 import type { Contact, ContactPropertyRelationship } from '@/lib/contactsTypes';
-import type { Unit } from '@/lib/unitsTypes';
+import { unitTypeLabel, type Unit } from '@/lib/unitsTypes';
 
 export interface PropertyOwnerDraft {
   id?: string | number;
@@ -166,6 +170,10 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
   const [roomCount, setRoomCount] = useState('');
   const [floorCount, setFloorCount] = useState('');
   const [floorCapacities, setFloorCapacities] = useState<string[]>([]);
+  const [officeInBuilding, setOfficeInBuilding] = useState<boolean | null>(null);
+  const [officeFloor, setOfficeFloor] = useState('');
+  const [commercialSpaceType, setCommercialSpaceType] = useState('');
+  const [mixedUseComponents, setMixedUseComponents] = useState<string[]>([]);
   const [facilities, setFacilities] = useState<string[]>([]);
   const [customFacilities, setCustomFacilities] = useState<string[]>([]);
   const [customFacility, setCustomFacility] = useState('');
@@ -205,6 +213,11 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
     setCategory(initialCategory);
     setRoomCount(readExtra(property, 'room_count'));
     setFloorCount(readExtra(property, 'floor_count'));
+    const savedOfficeInBuilding = property?.office_in_building;
+    setOfficeInBuilding(typeof savedOfficeInBuilding === 'boolean' ? savedOfficeInBuilding : null);
+    setOfficeFloor(readExtra(property, 'office_floor'));
+    setCommercialSpaceType(readExtra(property, 'commercial_space_type'));
+    setMixedUseComponents(property?.mixed_use_components ?? []);
     const savedCapacities = property?.floor_unit_counts ?? [];
     let capacities = savedCapacities.map(String);
     if (!capacities.length && Number(readExtra(property, 'floor_count')) > 0) capacities = Array.from({ length: Math.min(Number(readExtra(property, 'floor_count')), 100) }, () => '');
@@ -237,6 +250,12 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
   const singleFamily = subtype === 'single_family_home';
   const multifamily = subtype === 'multifamily_units';
   const apartment = subtype === 'apartment_building';
+  const commercial = category === 'commercial';
+  const officeBuilding = subtype === 'office_building';
+  const retailCenter = subtype === 'retail_center';
+  const hospitalitySpace = subtype === 'restaurant_hospitality';
+  const mixedUse = subtype === 'mixed_use_development';
+  const propertyCanRent = singleFamily || (commercial && !mixedUse);
   const selectedFacilities = useMemo(() => new Set(facilities), [facilities]);
   const previewProperty = useMemo<Property>(() => ({
     ...blankProperty,
@@ -249,17 +268,21 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
     property_category: category || 'residential',
     property_type: subtype,
     units_count: multifamily || apartment ? form.units_count : null,
-    floor_count: singleFamily || apartment ? (floorCount ? Number(floorCount) : null) : null,
+    floor_count: singleFamily || apartment || mixedUse ? (floorCount ? Number(floorCount) : null) : null,
     floor_unit_counts: apartment ? floorCapacities.map((capacity) => Number(capacity) || 0) : [],
     room_count: singleFamily ? (roomCount ? Number(roomCount) : null) : null,
     facilities,
     custom_facilities: customFacilities,
-    is_rented: singleFamily ? Boolean(rented) : false,
-    monthly_rent: singleFamily && rented ? Number(renter.monthly_rent) || null : null,
-    lease_term_type: singleFamily && rented ? renter.lease_term_type : null,
-    lease_start_date: singleFamily && rented ? renter.lease_start_date || null : null,
-    lease_end_date: singleFamily && rented && renter.lease_term_type === 'fixed' ? renter.lease_end_date || null : null,
-  }), [property, form, category, subtype, multifamily, apartment, singleFamily, floorCount, floorCapacities, roomCount, facilities, customFacilities, rented, renter]);
+    office_in_building: officeBuilding ? officeInBuilding : null,
+    office_floor: officeBuilding && officeInBuilding ? Number(officeFloor) : null,
+    commercial_space_type: retailCenter || hospitalitySpace ? commercialSpaceType || null : null,
+    mixed_use_components: mixedUse ? mixedUseComponents : [],
+    is_rented: propertyCanRent ? Boolean(rented) : false,
+    monthly_rent: propertyCanRent && rented ? Number(renter.monthly_rent) || null : null,
+    lease_term_type: propertyCanRent && rented ? renter.lease_term_type : null,
+    lease_start_date: propertyCanRent && rented ? renter.lease_start_date || null : null,
+    lease_end_date: propertyCanRent && rented && renter.lease_term_type === 'fixed' ? renter.lease_end_date || null : null,
+  }), [property, form, category, subtype, multifamily, apartment, singleFamily, officeBuilding, officeInBuilding, officeFloor, retailCenter, hospitalitySpace, commercialSpaceType, mixedUse, mixedUseComponents, propertyCanRent, floorCount, floorCapacities, roomCount, facilities, customFacilities, rented, renter]);
   const inlineOwnerData = useMemo(() => {
     const syntheticContacts: Contact[] = [];
     const relations: ContactPropertyRelationship[] = [];
@@ -317,7 +340,9 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
   })), [pendingUnits, previewProperty.id]);
   const configuredUnits = Number(previewProperty.units_count) || 0;
   const inlineUnitLimitReached = configuredUnits > 0 && inlineUnitRecords.length >= configuredUnits;
-  const inlineLayoutReady = configuredUnits > 0 && Number.isInteger(configuredUnits)
+  const inlineLayoutReady = mixedUse
+    ? mixedUseComponents.length > 0 && Number.isInteger(Number(floorCount)) && Number(floorCount) > 0
+    : configuredUnits > 0 && Number.isInteger(configuredUnits)
     && (!apartment || (
       Number(floorCount) > 0
       && floorCapacities.length === Number(floorCount)
@@ -361,8 +386,39 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
         }
       }
     }
-    if ((singleFamily || apartment) && owners.length === 0) next.owners = 'Add at least one owner.';
-    if (singleFamily || apartment) {
+    if (officeBuilding) {
+      if (officeInBuilding === null) next.office_in_building = 'Choose whether this office is inside a building.';
+      if (officeInBuilding && (!officeFloor.trim() || !Number.isInteger(Number(officeFloor)) || Number(officeFloor) < 0)) {
+        next.office_floor = 'Enter a whole-number floor. Use 0 for the ground floor.';
+      }
+    }
+    if ((retailCenter || hospitalitySpace) && !commercialSpaceType) {
+      next.commercial_space_type = `Choose the ${retailCenter ? 'retail center' : 'hospitality space'} type.`;
+    }
+    if (mixedUse) {
+      if (!mixedUseComponents.length) next.mixed_use_components = 'Choose at least one use included in this property.';
+      if (!floorCount.trim() || !Number.isInteger(Number(floorCount)) || Number(floorCount) <= 0) {
+        next.floor_count = 'Enter a whole-number floor count greater than 0.';
+      }
+      const mixedUnits = property
+        ? existingUnits
+        : pendingUnits.map((item) => item.draft);
+      const unitTypes = new Set(mixedUnits.map((unit) => unit.unit_type).filter(Boolean));
+      if (!property && mixedUseComponents.some((component) => !unitTypes.has(component))) {
+        next.inline_units = 'Add at least one mapped unit for every selected use.';
+      }
+      if (property && existingUnits.some((unit) => unit.unit_type && !mixedUseComponents.includes(unit.unit_type))) {
+        next.inline_units = 'Remove or reclassify every space for a use before removing that use.';
+      }
+      const floorTotal = Number(floorCount);
+      if (Number.isInteger(floorTotal) && floorTotal > 0 && mixedUnits.some((unit) =>
+        unit.floor === null || !Number.isInteger(unit.floor) || unit.floor < 0 || unit.floor >= floorTotal,
+      )) {
+        next.inline_floor = 'Every unit must be assigned to a floor within this property.';
+      }
+    }
+    if ((singleFamily || apartment || commercial) && owners.length === 0) next.owners = 'Add at least one owner.';
+    if (singleFamily || apartment || commercial) {
       owners.forEach((owner, index) => {
         if (owner.source === 'existing' && !owner.contact_id) next[`owner_${index}`] = 'Select an existing contact.';
         if (owner.source === 'new' && !owner.name.trim()) next[`owner_${index}`] = 'Owner name is required.';
@@ -380,8 +436,8 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
         if (Math.abs(sum - 100) > 0.001) next.owner_total = `Ownership percentages must total 100% (currently ${sum}%).`;
       }
     }
-    if (singleFamily && rented === null) next.rented = 'Choose whether this home is rented.';
-    if (singleFamily && rented) {
+    if (propertyCanRent && rented === null) next.rented = `Choose whether this ${singleFamily ? 'home' : 'property'} is rented.`;
+    if (propertyCanRent && rented) {
       if (renter.source === 'existing' && !renter.contact_id) next.renter_contact = 'Select an existing renter.';
       if (renter.source === 'new' && !renter.name.trim()) next.renter_contact = 'Renter name is required.';
       if (renter.source === 'new' && !renter.email.trim() && !renter.phone.trim()) next.renter_contact = 'Add an email or phone number.';
@@ -395,7 +451,7 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
       }
     }
     return next;
-  }, [form, subtype, singleFamily, multifamily, apartment, residential, roomCount, floorCount, floorCapacities, owners, rented, renter, pendingUnits]);
+  }, [form, subtype, singleFamily, multifamily, apartment, commercial, officeBuilding, officeInBuilding, officeFloor, retailCenter, hospitalitySpace, commercialSpaceType, mixedUse, mixedUseComponents, property, existingUnits, propertyCanRent, roomCount, floorCount, floorCapacities, owners, rented, renter, pendingUnits]);
 
   const canSave = Object.keys(validation).length === 0 && !saving;
   const save = async () => {
@@ -417,15 +473,19 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
       facilities,
       custom_facilities: customFacilities,
       room_count: singleFamily ? Number(roomCount) : null,
-      floor_count: singleFamily || apartment ? Number(floorCount) : null,
+      floor_count: singleFamily || apartment || mixedUse ? Number(floorCount) : null,
       floor_unit_counts: apartment ? floorCapacities.map(Number) : [],
-      is_rented: singleFamily ? Boolean(rented) : false,
-      monthly_rent: singleFamily && rented ? Number(renter.monthly_rent) : null,
-      lease_term_type: singleFamily && rented ? renter.lease_term_type : null,
-      lease_start_date: singleFamily && rented ? renter.lease_start_date : null,
-      lease_end_date: singleFamily && rented && renter.lease_term_type === 'fixed' ? renter.lease_end_date : null,
+      office_in_building: officeBuilding ? officeInBuilding : null,
+      office_floor: officeBuilding && officeInBuilding ? Number(officeFloor) : null,
+      commercial_space_type: retailCenter || hospitalitySpace ? commercialSpaceType : null,
+      mixed_use_components: mixedUse ? mixedUseComponents : [],
+      is_rented: propertyCanRent ? Boolean(rented) : false,
+      monthly_rent: propertyCanRent && rented ? Number(renter.monthly_rent) : null,
+      lease_term_type: propertyCanRent && rented ? renter.lease_term_type : null,
+      lease_start_date: propertyCanRent && rented ? renter.lease_start_date : null,
+      lease_end_date: propertyCanRent && rented && renter.lease_term_type === 'fixed' ? renter.lease_end_date : null,
     } as PropertyDraft;
-    const ownerRows = singleFamily || apartment ? owners.map((owner) => ({
+    const ownerRows = singleFamily || apartment || commercial ? owners.map((owner) => ({
       ...owner,
       name: owner.name.trim(),
       email: owner.email.trim(),
@@ -433,7 +493,7 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
       ownership_percentage: apartment && owners.length > 1 ? '' : owner.ownership_percentage.trim(),
       ownership_scope: apartment && owners.length > 1 ? owner.ownership_scope.trim() : '',
     })) : [];
-    const renterRow = singleFamily && rented ? {
+    const renterRow = propertyCanRent && rented ? {
       ...renter,
       name: renter.name.trim(),
       email: renter.email.trim(),
@@ -482,6 +542,10 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
                         setFloorCount('');
                         setFloorCapacities([]);
                         setPendingUnits([]);
+                        setOfficeInBuilding(null);
+                        setOfficeFloor('');
+                        setCommercialSpaceType('');
+                        setMixedUseComponents([]);
                       }}
                       className={`min-h-10 rounded-[9px] border px-3 text-left text-[12px] font-semibold transition-colors ${selected ? 'border-[#97ad9b] bg-[#eff4ee] text-[#455c4b]' : 'border-[#e4e2de] bg-white text-[#625e57] hover:border-[#cbd7ce] hover:bg-[#f8faf7]'}`}
                     >
@@ -493,7 +557,7 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
             </div>
             {category && <div className="sm:col-span-2">
               <Field label={`${PROPERTY_CATEGORIES.find((option) => option.value === category)?.label ?? 'Property'} subtype`} required>
-                <FlowPointSelect testId="select-property-subtype" value={subtype} onChange={(value) => { setField('property_type', value); setField('units_count', null); setFloorCount(''); setFloorCapacities([]); setPendingUnits([]); }} placeholder="Choose a subtype" options={[...PROPERTY_TYPES_BY_CATEGORY[category]]} />
+                <FlowPointSelect testId="select-property-subtype" value={subtype} onChange={(value) => { setField('property_type', value); setField('units_count', null); setFloorCount(''); setFloorCapacities([]); setPendingUnits([]); setOfficeInBuilding(null); setOfficeFloor(''); setCommercialSpaceType(''); setMixedUseComponents([]); }} placeholder="Choose a subtype" options={[...PROPERTY_TYPES_BY_CATEGORY[category]]} />
               </Field>
             </div>}
             <div className="sm:col-span-2"><FormError message={validation.subtype} testId="error-property-subtype" /></div>
@@ -513,9 +577,9 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
                   <span><strong className="font-semibold text-[#485d51]">{PROPERTY_TYPES_BY_CATEGORY[category as PropertyCategory]?.find((option) => option.value === subtype)?.label}</strong> setup · Add operational details that help your team manage this property.</span>
                 </div>
 
-                {residential && (
+                {(residential || commercial) && (
                   <>
-                    <section className="mb-7" data-testid="section-property-layout">
+                    {residential && <section className="mb-7" data-testid="section-property-layout">
                       <SectionHeading index="01" eyebrow="Layout" title="Set the footprint" description="Capture the essentials your team will use to organize the property." />
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         {singleFamily && <><Field label="Rooms" required><input data-testid="input-property-room-count" className={inputClass} type="number" min="1" step="1" value={roomCount} onChange={(event) => setRoomCount(event.target.value)} placeholder="e.g. 5" /></Field><Field label="Floors" required><input data-testid="input-property-floor-count" className={inputClass} type="number" min="1" step="1" value={floorCount} onChange={(event) => { const value = event.target.value; setFloorCount(value); setFloorCapacities(Array.from({ length: Math.min(Number(value) || 0, 100) }, (_, index) => floorCapacities[index] ?? '')); }} placeholder="e.g. 2" /></Field></>}
@@ -530,13 +594,59 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
                           <FormError message={validation.floor_count || validation.floor_capacities} testId="error-property-floor-capacities" />
                         </div>
                       </>}
-                    </section>
+                    </section>}
 
-                    {(singleFamily || multifamily || apartment) && (
+                    {commercial && <section className="mb-7" data-testid="section-commercial-details">
+                      <SectionHeading index="01" eyebrow="Commercial details" title="Configure this property type" description="Add the details that describe this commercial space." />
+                      {officeBuilding && <div className="space-y-3">
+                        <Field label="Is this office inside a building?" required>
+                          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Office building location">
+                            {[{ value: true, label: 'Yes, in a building' }, { value: false, label: 'No, standalone' }].map((choice) => <button key={String(choice.value)} type="button" data-testid={`button-office-in-building-${choice.value ? 'yes' : 'no'}`} aria-pressed={officeInBuilding === choice.value} onClick={() => setOfficeInBuilding(choice.value)} className={`rounded-[9px] border p-3 text-left text-[11px] font-semibold ${officeInBuilding === choice.value ? 'border-[#97ad9b] bg-[#eff4ee] text-[#455c4b]' : 'border-[#e7e4de] bg-white text-[#6f6b63]'}`}>{choice.label}</button>)}
+                          </div>
+                          <FormError message={validation.office_in_building} />
+                        </Field>
+                        {officeInBuilding && <Field label="Floor" required hint="Use 0 for ground floor">
+                          <input data-testid="input-office-floor" className={inputClass} type="number" min="0" step="1" value={officeFloor} onChange={(event) => setOfficeFloor(event.target.value)} placeholder="e.g. 4" />
+                          <FormError message={validation.office_floor} />
+                        </Field>}
+                      </div>}
+                      {retailCenter && <div className="max-w-[440px]">
+                        <Field label="Retail center type" required>
+                          <FlowPointSelect testId="select-commercial-space-type" value={commercialSpaceType} onChange={setCommercialSpaceType} placeholder="Choose a retail center type" options={[...RETAIL_CENTER_TYPES]} />
+                        </Field>
+                        <FormError message={validation.commercial_space_type} />
+                      </div>}
+                      {hospitalitySpace && <div className="max-w-[440px]">
+                        <Field label="Hospitality space type" required>
+                          <FlowPointSelect testId="select-commercial-space-type" value={commercialSpaceType} onChange={setCommercialSpaceType} placeholder="Choose a space type" options={[...HOSPITALITY_SPACE_TYPES]} />
+                        </Field>
+                        <FormError message={validation.commercial_space_type} />
+                      </div>}
+                      {mixedUse && <>
+                        <div>
+                          <Field label="What does this property include?" required>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              {MIXED_USE_COMPONENTS.map((component) => {
+                                const checked = mixedUseComponents.includes(component.value);
+                                return <button key={component.value} type="button" data-testid={`button-mixed-use-component-${component.value}`} aria-pressed={checked} onClick={() => setMixedUseComponents((current) => checked ? current.filter((value) => value !== component.value) : [...current, component.value])} className={`flex min-h-10 items-center gap-2 rounded-[9px] border px-3 text-left text-[11px] font-medium ${checked ? 'border-[#b9cabe] bg-[#edf4ee] text-[#4d6a59]' : 'border-[#e7e4de] bg-white text-[#69665f]'}`}><span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${checked ? 'border-[#63816e] bg-[#63816e] text-white' : 'border-[#d5d2ca] bg-white'}`}>{checked && <Check size={11} />}</span>{component.label}</button>;
+                              })}
+                            </div>
+                          </Field>
+                          <FormError message={validation.mixed_use_components} />
+                        </div>
+                        <div className="mt-4 max-w-[260px]">
+                          <Field label="Number of floors" required><input data-testid="input-property-floor-count" className={inputClass} type="number" min="1" step="1" value={floorCount} onChange={(event) => setFloorCount(event.target.value)} placeholder="e.g. 6" /></Field>
+                          <FormError message={validation.floor_count} />
+                        </div>
+                        <p className="mt-3 rounded-[9px] bg-[#f6f5f1] px-3 py-2.5 text-[10px] leading-4 text-[#817d75]">Each space is added below with its type and building floor, plus its own owners, renter, lease, and facilities.</p>
+                      </>}
+                    </section>}
+
+                    {(singleFamily || multifamily || apartment || commercial) && (
                       <section className="mb-7" data-testid="section-property-facilities">
-                        <SectionHeading index="02" eyebrow="Shared spaces" title="Facilities & features" description={apartment ? 'Select the building amenities and any home-style shared facilities.' : 'Select what’s available. You can add a facility that isn’t listed.'} />
+                        <SectionHeading index="02" eyebrow="Shared spaces" title="Facilities & features" description={commercial ? 'Select the commercial property facilities. You can also add a facility that isn’t listed.' : apartment ? 'Select the building amenities and any home-style shared facilities.' : 'Select what’s available. You can add a facility that isn’t listed.'} />
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                          {[...HOME_FACILITIES, ...(apartment ? APARTMENT_BUILDING_FACILITIES : [])].map((facility) => {
+                          {(commercial ? COMMERCIAL_FACILITIES : [...HOME_FACILITIES, ...(apartment ? APARTMENT_BUILDING_FACILITIES : [])]).map((facility) => {
                             const checked = selectedFacilities.has(facility.value);
                             return <button key={facility.value} type="button" data-testid={`button-facility-${facility.value}`} aria-pressed={checked} onClick={() => toggleFacility(facility.value)} className={`flex min-h-10 items-center gap-2 rounded-[9px] border px-3 text-left text-[11px] font-medium transition-colors ${checked ? 'border-[#b9cabe] bg-[#edf4ee] text-[#4d6a59]' : 'border-[#e7e4de] bg-white text-[#69665f] hover:border-[#ccd7ce] hover:bg-[#f8faf7]'}`}><span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${checked ? 'border-[#63816e] bg-[#63816e] text-white' : 'border-[#d5d2ca] bg-white'}`}>{checked && <Check size={11} />}</span>{facility.label}</button>;
                           })}
@@ -546,8 +656,8 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
                       </section>
                     )}
 
-                    {(singleFamily || apartment) && <section className="mb-7" data-testid="section-property-owners">
-                      <SectionHeading index={singleFamily || multifamily ? '03' : '03'} eyebrow="Ownership" title="Who owns this property?" description={apartment ? 'Building owners share the property. With multiple owners, record each one’s unit scope.' : 'Add one or more owners. Ownership shares must total 100%.'} />
+                    {(singleFamily || apartment || commercial) && <section className="mb-7" data-testid="section-property-owners">
+                      <SectionHeading index="03" eyebrow="Ownership" title="Who owns this property?" description={apartment ? 'Building owners share the property. With multiple owners, record each one’s unit scope.' : 'Add one or more owners. Ownership shares must total 100%.'} />
                       <div className="space-y-3">
                         {owners.map((owner, index) => (
                           <article key={owner.id ?? `owner-${index}`} data-testid={`card-property-owner-${index}`} className="rounded-[12px] border border-[#e7e4de] bg-white p-3.5 sm:p-4">
@@ -565,9 +675,9 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
                       <FormError message={validation.owners || validation.owner_total} testId="error-property-owner-total" />
                     </section>}
 
-                    {singleFamily && (
+                    {propertyCanRent && (
                       <section data-testid="section-property-rental">
-                        <SectionHeading index="04" eyebrow="Occupancy" title="Is this home rented?" description="Add the current renter and lease details, or leave the home unoccupied." />
+                        <SectionHeading index="04" eyebrow="Occupancy" title={`Is this ${singleFamily ? 'home' : 'property'} rented?`} description={`Add the current renter and lease details, or leave the ${singleFamily ? 'home' : 'property'} unoccupied.`} />
                         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Rental status">
                           {[{ value: false, title: 'Not rented', copy: 'No active renter' }, { value: true, title: 'Rented', copy: 'Add renter & lease' }].map((choice) => <button key={String(choice.value)} type="button" data-testid={`button-property-rented-${choice.value ? 'yes' : 'no'}`} aria-pressed={rented === choice.value} onClick={() => setRented(choice.value)} className={`rounded-[10px] border p-3 text-left transition-colors ${rented === choice.value ? 'border-[#97ad9b] bg-[#eff4ee]' : 'border-[#e7e4de] bg-white hover:border-[#d1d7cd]'}`}><span className="block text-[12px] font-semibold text-[#45443d]">{choice.title}</span><span className="mt-1 block text-[10px] text-[#949087]">{choice.copy}</span></button>)}
                         </div>
@@ -586,19 +696,20 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
                     )}
                   </>
                 )}
-                {!property && (multifamily || apartment) && (
+                {!property && (multifamily || apartment || mixedUse) && (
                   <section className="mt-7 border-t border-[#e9e6e0] pt-6" data-testid="section-property-inline-units">
                     <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                      <div><p className="text-[12px] font-semibold text-[#37362f]">Add units now</p><p className="mt-1 text-[10px] leading-4 text-[#969188]">Set up homes here, or create the property first and add units from its card.</p></div>
-                      <span data-testid="text-inline-unit-count" className="rounded-full bg-[#f0f2ec] px-2.5 py-1 text-[10px] font-semibold text-[#617565]">{inlineUnitRecords.length} / {configuredUnits || '—'} units</span>
+                      <div><p className="text-[12px] font-semibold text-[#37362f]">{mixedUse ? 'Map the spaces by floor' : 'Add units now'}</p><p className="mt-1 text-[10px] leading-4 text-[#969188]">{mixedUse ? 'Add at least one unit for each selected use and assign it to a floor.' : 'Set up homes here, or create the property first and add units from its card.'}</p></div>
+                      <span data-testid="text-inline-unit-count" className="rounded-full bg-[#f0f2ec] px-2.5 py-1 text-[10px] font-semibold text-[#617565]">{mixedUse ? `${inlineUnitRecords.length} spaces` : `${inlineUnitRecords.length} / ${configuredUnits || '—'} units`}</span>
                     </div>
-                    {inlineUnitRecords.length > 0 ? <div className="mb-3 space-y-2">{inlineUnitRecords.map((unit, index) => <article key={`${unit.unit_number}-${index}`} data-testid={`card-inline-unit-${index}`} className="flex items-center justify-between gap-3 rounded-[10px] border border-[#e7e4de] bg-white px-3 py-2.5"><div className="min-w-0"><p className="truncate text-[11px] font-semibold text-[#45433c]">{unit.unit_number}</p><p className="mt-0.5 text-[10px] text-[#969188]">{apartment ? unit.floor === 0 ? 'Ground floor' : `Floor ${unit.floor}` : `${unit.floor_count} interior floor${unit.floor_count === 1 ? '' : 's'}`} · {unit.room_count} rooms</p></div><button type="button" data-testid={`button-remove-inline-unit-${index}`} onClick={() => setPendingUnits((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove unit ${unit.unit_number}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#938e85] hover:bg-[#fbefed] hover:text-[#a33e34]"><Trash2 size={13} /></button></article>)}</div> : <p className="mb-3 rounded-[10px] border border-dashed border-[#d8d5ce] px-3 py-4 text-center text-[10px] text-[#9a958d]">No units added yet.</p>}
-                    <FormError message={validation.inline_units || validation.inline_floor_capacity} />
-                    <button type="button" data-testid="button-add-inline-unit" disabled={!inlineLayoutReady || inlineUnitLimitReached} onClick={() => setUnitEditorOpen(true)} className="flex h-9 items-center gap-2 rounded-[9px] border border-dashed border-[#d8d5ce] px-3 text-[11px] font-semibold text-[#6f6b63] transition-colors hover:border-[#aebcaf] hover:bg-[#f3f6f1] hover:text-[#4f6d58] disabled:cursor-not-allowed disabled:opacity-45"><Plus size={13} />{inlineUnitLimitReached ? 'Unit limit reached' : 'Add a unit'}</button>
-                    {!inlineLayoutReady && <p className="mt-2 text-[10px] text-[#9a958d]">{apartment ? 'Enter the total unit count and valid capacity for every floor first.' : 'Enter the total unit count first.'}</p>}
+                    {!inlineLayoutReady && <p className="mb-3 rounded-[9px] bg-[#f6f5f1] px-3 py-2 text-[10px] text-[#8d8981]">{mixedUse ? 'Choose at least one included use and set the number of floors above.' : apartment ? 'Set the total units and floor capacities above before adding apartment records.' : 'Set the total number of units above before adding homes.'}</p>}
+                    {inlineUnitRecords.length > 0 ? <div className="mb-3 space-y-2">{inlineUnitRecords.map((unit, index) => <article key={`${unit.unit_number}-${index}`} data-testid={`card-inline-unit-${index}`} className="flex items-center justify-between gap-3 rounded-[10px] border border-[#e7e4de] bg-white px-3 py-2.5"><div className="min-w-0"><p className="truncate text-[11px] font-semibold text-[#45433c]">{unit.unit_number}</p><p className="mt-0.5 text-[10px] text-[#969188]">{mixedUse ? `${unitTypeLabel(unit.unit_type)} · ${unit.floor === 0 ? 'Ground floor' : `Floor ${unit.floor}`}` : apartment ? unit.floor === 0 ? 'Ground floor' : `Floor ${unit.floor}` : `${unit.floor_count} interior floor${unit.floor_count === 1 ? '' : 's'}`} {!mixedUse && `· ${unit.room_count} rooms`}</p></div><button type="button" data-testid={`button-remove-inline-unit-${index}`} onClick={() => setPendingUnits((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove unit ${unit.unit_number}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#938e85] hover:bg-[#fbefed] hover:text-[#a33e34]"><Trash2 size={13} /></button></article>)}</div> : <p className="mb-3 rounded-[10px] border border-dashed border-[#d8d5ce] px-3 py-4 text-center text-[10px] text-[#9a958d]">No units added yet.</p>}
+                    <FormError message={validation.inline_units || validation.inline_floor_capacity || validation.inline_floor} />
+                    <button type="button" data-testid="button-add-inline-unit" disabled={!inlineLayoutReady || inlineUnitLimitReached} onClick={() => setUnitEditorOpen(true)} className="flex h-9 items-center gap-2 rounded-[9px] border border-dashed border-[#d8d5ce] px-3 text-[11px] font-semibold text-[#6f6b63] transition-colors hover:border-[#aebcaf] hover:bg-[#f3f6f1] hover:text-[#4f6d58] disabled:cursor-not-allowed disabled:opacity-45"><Plus size={13} />{inlineUnitLimitReached ? 'Unit limit reached' : mixedUse ? 'Add a space' : 'Add a unit'}</button>
+                    {!inlineLayoutReady && <p className="mt-2 text-[10px] text-[#9a958d]">{mixedUse ? 'Choose at least one use and set the number of floors first.' : apartment ? 'Enter the total unit count and valid capacity for every floor first.' : 'Enter the total unit count first.'}</p>}
                   </section>
                 )}
-                {!residential && <div data-testid="text-property-basic-setup" className="rounded-[10px] border border-[#e7e4de] bg-white px-4 py-3 text-[11px] leading-5 text-[#817d75]">The location and property classification are ready. Additional setup for this property type will be available in a later step.</div>}
+                {!residential && !commercial && <div data-testid="text-property-basic-setup" className="rounded-[10px] border border-[#e7e4de] bg-white px-4 py-3 text-[11px] leading-5 text-[#817d75]">The location and property classification are ready. Additional setup for this property type will be available in a later step.</div>}
               </motion.div>
             )}
           </AnimatePresence>
@@ -611,7 +722,7 @@ export default function PropertySetupForm({ property, contacts, initialOwners, i
           <div className="flex gap-2"><button type="button" data-testid="button-cancel-property-setup" onClick={onClose} disabled={saving} className="h-9 rounded-[9px] border border-[#e2dfd8] px-4 text-[11px] font-semibold text-[#66635c] transition-colors hover:bg-[#f1efeb] disabled:opacity-50">Cancel</button><button type="button" data-testid="button-save-property-setup" onClick={save} disabled={!canSave} title={!canSave && Object.keys(validation).length ? 'Complete the required fields to continue' : undefined} className="flex h-9 min-w-[122px] items-center justify-center gap-2 rounded-[9px] bg-[#55776b] px-4 text-[11px] font-semibold text-white transition-colors hover:bg-[#456357] disabled:cursor-not-allowed disabled:bg-[#b9c4bb]">{saving ? <><Loader2 size={13} className="animate-spin" />Saving…</> : property ? 'Save changes' : 'Create property'}</button></div>
         </footer>
       </motion.section>
-      {unitEditorOpen && (multifamily || apartment) && <UnitSetupModal property={previewProperty} units={[...existingUnits.filter((unit) => unit.property_id === previewProperty.id), ...inlineUnitRecords]} contacts={inlineOwnerData.contacts} relationships={inlineOwnerData.relationships} onSave={async (payload) => { setPendingUnits((current) => [...current, { ...payload, draft: { ...payload.draft, property_id: previewProperty.id } }]); setUnitEditorOpen(false); }} onClose={() => setUnitEditorOpen(false)} />}
+      {unitEditorOpen && (multifamily || apartment || mixedUse) && <UnitSetupModal property={previewProperty} units={[...existingUnits.filter((unit) => unit.property_id === previewProperty.id), ...inlineUnitRecords]} contacts={inlineOwnerData.contacts} relationships={inlineOwnerData.relationships} onSave={async (payload) => { setPendingUnits((current) => [...current, { ...payload, draft: { ...payload.draft, property_id: previewProperty.id } }]); setUnitEditorOpen(false); }} onClose={() => setUnitEditorOpen(false)} />}
     </div>
   );
 }

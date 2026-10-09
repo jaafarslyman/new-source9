@@ -6,6 +6,7 @@ export interface Unit {
   updated_at: string;
   unit_number: string;
   unit_type: string | null;
+  commercial_space_type: string | null;
   description: string | null;
   floor: number | null;
   floor_count: number | null;
@@ -38,6 +39,10 @@ export const UNIT_TYPES = [
   { value: 'condo', label: 'Condo' },
   { value: 'townhouse', label: 'Townhouse' },
   { value: 'commercial', label: 'Commercial' },
+  { value: 'office', label: 'Office space' },
+  { value: 'retail_store', label: 'Retail store' },
+  { value: 'restaurant_hospitality', label: 'Restaurant / hospitality' },
+  { value: 'warehouse', label: 'Warehouse' },
   { value: 'other', label: 'Other' },
 ] as const;
 
@@ -60,6 +65,7 @@ export const blankUnit: UnitDraft = {
   property_id: '',
   unit_number: '',
   unit_type: 'apartment',
+  commercial_space_type: null,
   description: '',
   floor: null,
   floor_count: null,

@@ -3,12 +3,17 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { AlertCircle, Check, DoorOpen, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import FlowPointSelect from '@/components/FlowPointSelect';
 import {
+  COMMERCIAL_FACILITIES,
+  HOSPITALITY_SPACE_TYPES,
   HOME_FACILITIES,
+  MIXED_USE_COMPONENTS,
+  RETAIL_UNIT_TYPES,
   propertyTypeLabel,
   type Property,
 } from '@/lib/propertiesTypes';
 import {
   formatMoney,
+  unitTypeLabel,
   type Unit,
   type UnitDraft,
 } from '@/lib/unitsTypes';
@@ -154,13 +159,16 @@ function UnitForm({
 }) {
   const apartmentBuilding = property.property_type === 'apartment_building';
   const multifamily = property.property_type === 'multifamily_units';
+  const mixedUse = property.property_type === 'mixed_use_development';
+  const hasUnitOwnership = multifamily || mixedUse;
   const existingUnitOwners = relationships.filter((item) => item.unit_id === unit?.id && item.relationship_type === 'owner');
   const propertyOwners = relationships.filter((item) => item.property_id === property.id && item.relationship_type === 'owner' && !item.unit_id);
   const activeTenant = relationships.find((item) => item.unit_id === unit?.id && item.relationship_type === 'tenant');
   const [draft, setDraft] = useState<UnitDraft>(() => ({
     property_id: property.id,
     unit_number: unit?.unit_number ?? '',
-    unit_type: apartmentBuilding ? 'apartment' : 'house',
+    unit_type: unit?.unit_type ?? (mixedUse ? property.mixed_use_components?.[0] ?? 'apartment' : apartmentBuilding ? 'apartment' : 'house'),
+    commercial_space_type: unit?.commercial_space_type ?? null,
     description: unit?.description ?? '',
     floor: unit?.floor ?? null,
     floor_count: unit?.floor_count ?? null,
@@ -184,7 +192,7 @@ function UnitForm({
     rules: unit?.rules ?? '',
     notes: unit?.notes ?? '',
   }));
-  const [owners, setOwners] = useState<PropertyOwnerDraft[]>(() => multifamily
+  const [owners, setOwners] = useState<PropertyOwnerDraft[]>(() => hasUnitOwnership
     ? existingUnitOwners.length
       ? existingUnitOwners.map((relationship) => relationshipOwnerDraft(relationship, contacts.find((contact) => String(contact.id) === String(relationship.contact_id))))
       : [blankOwner()]
@@ -224,12 +232,16 @@ function UnitForm({
     if (apartmentBuilding && propertyOwners.length > 1 && (!/^\d+$/.test(draft.unit_number.trim()) || Number(draft.unit_number) < 1 || Number(draft.unit_number) > (property.units_count ?? 0))) {
       next.unit_number = `Use an apartment number from 1 to ${property.units_count ?? 0} so its building owner can be assigned.`;
     }
-    if (!Number.isInteger(draft.room_count) || draft.room_count === null || draft.room_count < 1) next.room_count = 'Enter a whole-number room count greater than 0.';
+    if (!mixedUse && (!Number.isInteger(draft.room_count) || draft.room_count === null || draft.room_count < 1)) next.room_count = 'Enter a whole-number room count greater than 0.';
     if (multifamily && (!Number.isInteger(draft.floor_count) || draft.floor_count === null || draft.floor_count < 1)) next.floor_count = 'Enter a whole-number interior floor count greater than 0.';
     if (apartmentBuilding && (draft.floor === null || !Number.isInteger(draft.floor) || draft.floor < 0 || draft.floor >= (property.floor_count ?? 0))) next.floor = 'Choose a floor that exists in this building.';
-    if (!unit && occupiedTotal >= (property.units_count ?? 0)) next.limit = 'This property already has its configured number of units.';
+    if (mixedUse && (!property.mixed_use_components?.includes(draft.unit_type ?? '') || !MIXED_USE_COMPONENTS.some((component) => component.value === draft.unit_type))) next.unit_type = 'Choose one of the uses selected for this property.';
+    if (mixedUse && (draft.floor === null || !Number.isInteger(draft.floor) || draft.floor < 0 || draft.floor >= (property.floor_count ?? 0))) next.floor = 'Choose a floor within this property.';
+    if (mixedUse && draft.unit_type === 'apartment' && (!Number.isInteger(draft.room_count) || draft.room_count === null || draft.room_count < 1)) next.room_count = 'Enter a whole-number room count greater than 0.';
+    if (mixedUse && ['retail_store', 'restaurant_hospitality'].includes(draft.unit_type ?? '') && !draft.commercial_space_type) next.commercial_space_type = 'Choose a space type.';
+    if (!unit && !mixedUse && occupiedTotal >= (property.units_count ?? 0)) next.limit = 'This property already has its configured number of units.';
     if (apartmentBuilding && draft.floor !== null && unitsOnFloor >= floorCapacity) next.floor = `This floor already has its limit of ${floorCapacity} units.`;
-    if (multifamily) {
+    if (hasUnitOwnership) {
       if (!owners.length) next.owners = 'Add at least one owner.';
       const distinctContacts = new Set<string>();
       owners.forEach((owner, index) => {
@@ -277,10 +289,11 @@ function UnitForm({
       ...draft,
       property_id: property.id,
       unit_number: draft.unit_number.trim(),
-      unit_type: apartmentBuilding ? 'apartment' : 'house',
-      floor: apartmentBuilding ? draft.floor : null,
+      unit_type: mixedUse ? draft.unit_type : apartmentBuilding ? 'apartment' : multifamily ? 'house' : draft.unit_type,
+      commercial_space_type: mixedUse && ['retail_store', 'restaurant_hospitality'].includes(draft.unit_type ?? '') ? draft.commercial_space_type : null,
+      floor: apartmentBuilding || mixedUse ? draft.floor : null,
       floor_count: multifamily ? Number(draft.floor_count) : null,
-      room_count: Number(draft.room_count),
+      room_count: mixedUse ? (draft.room_count === null ? null : Number(draft.room_count)) : Number(draft.room_count),
       facilities: (draft.facilities ?? []).filter(Boolean),
       custom_facilities: (draft.custom_facilities ?? []).filter(Boolean),
       status: rented ? 'occupied' : 'vacant',
@@ -291,7 +304,7 @@ function UnitForm({
       security_deposit: null,
       rent_due_day: 1,
     };
-    const ownerRows = multifamily ? owners.map((owner) => ({
+    const ownerRows = hasUnitOwnership ? owners.map((owner) => ({
       ...owner,
       name: owner.name.trim(),
       email: owner.email.trim(),
@@ -325,18 +338,23 @@ function UnitForm({
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5 sm:px-7">
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2"><Field label="Unit name or number" required><input autoFocus data-testid="input-unit-name" className={inputClass} value={draft.unit_number} onChange={(event) => change('unit_number', event.target.value)} placeholder="e.g. 1 or 2A" /></Field><FormError message={errors.unit_number} /></div>
-          <Field label="Rooms" required><input data-testid="input-unit-room-count" className={inputClass} type="number" min="1" step="1" value={draft.room_count ?? ''} onChange={(event) => change('room_count', event.target.value === '' ? null : Number(event.target.value))} placeholder="e.g. 4" /><FormError message={errors.room_count} /></Field>
+          <div className="sm:col-span-2"><Field label={mixedUse ? 'Space name or identifier' : 'Unit name or number'} required><input autoFocus data-testid="input-unit-name" className={inputClass} value={draft.unit_number} onChange={(event) => change('unit_number', event.target.value)} placeholder={mixedUse ? 'e.g. Suite 12 or West warehouse' : 'e.g. 1 or 2A'} /></Field><FormError message={errors.unit_number} /></div>
+          {mixedUse && <Field label="Space type" required><FlowPointSelect testId="select-mixed-use-unit-type" value={draft.unit_type ?? ''} onChange={(value) => setDraft((current) => ({ ...current, unit_type: value, commercial_space_type: null }))} placeholder="Choose a selected use" options={MIXED_USE_COMPONENTS.filter((component) => property.mixed_use_components?.includes(component.value)).map((component) => ({ value: component.value, label: component.label }))} /><FormError message={errors.unit_type} /></Field>}
+          {mixedUse && (draft.unit_type === 'retail_store' || draft.unit_type === 'restaurant_hospitality') && <Field label={draft.unit_type === 'retail_store' ? 'Retail store type' : 'Hospitality space type'} required><FlowPointSelect testId="select-mixed-use-commercial-space-type" value={draft.commercial_space_type ?? ''} onChange={(value) => change('commercial_space_type', value)} placeholder="Choose a space type" options={draft.unit_type === 'retail_store' ? [...RETAIL_UNIT_TYPES] : [...HOSPITALITY_SPACE_TYPES]} /><FormError message={errors.commercial_space_type} /></Field>}
+          <Field label="Rooms" required={!mixedUse || draft.unit_type === 'apartment'}><input data-testid="input-unit-room-count" className={inputClass} type="number" min="1" step="1" value={draft.room_count ?? ''} onChange={(event) => change('room_count', event.target.value === '' ? null : Number(event.target.value))} placeholder={mixedUse && draft.unit_type !== 'apartment' ? 'Optional' : 'e.g. 4'} /><FormError message={errors.room_count} /></Field>
           {multifamily && <Field label="Interior floors" required><input data-testid="input-unit-floor-count" className={inputClass} type="number" min="1" step="1" value={draft.floor_count ?? ''} onChange={(event) => change('floor_count', event.target.value === '' ? null : Number(event.target.value))} placeholder="e.g. 2" /><FormError message={errors.floor_count} /></Field>}
-          {apartmentBuilding && <Field label="Building floor" required><FlowPointSelect testId="select-unit-building-floor" value={draft.floor === null ? '' : String(draft.floor)} onChange={(value) => change('floor', value === '' ? null : Number(value))} placeholder="Choose a floor" options={floorOptions} /><FormError message={errors.floor} /></Field>}
-          <Field label="Bedrooms" ><input data-testid="input-unit-bedrooms" className={inputClass} type="number" min="0" step="0.5" value={draft.bedrooms ?? ''} onChange={(event) => change('bedrooms', event.target.value === '' ? null : Number(event.target.value))} placeholder="Optional" /></Field>
-          <Field label="Bathrooms"><input data-testid="input-unit-bathrooms" className={inputClass} type="number" min="0" step="0.5" value={draft.bathrooms ?? ''} onChange={(event) => change('bathrooms', event.target.value === '' ? null : Number(event.target.value))} placeholder="Optional" /></Field>
+          {(apartmentBuilding || mixedUse) && <Field label="Building floor" required><FlowPointSelect testId="select-unit-building-floor" value={draft.floor === null ? '' : String(draft.floor)} onChange={(value) => change('floor', value === '' ? null : Number(value))} placeholder="Choose a floor" options={floorOptions} /><FormError message={errors.floor} /></Field>}
+          {mixedUse && <Field label="Square footage"><input data-testid="input-unit-square-footage" className={inputClass} type="number" min="0" step="1" value={draft.square_footage ?? ''} onChange={(event) => change('square_footage', event.target.value === '' ? null : Number(event.target.value))} placeholder="Optional" /></Field>}
+          {(!mixedUse || draft.unit_type === 'apartment') && <>
+            <Field label="Bedrooms"><input data-testid="input-unit-bedrooms" className={inputClass} type="number" min="0" step="0.5" value={draft.bedrooms ?? ''} onChange={(event) => change('bedrooms', event.target.value === '' ? null : Number(event.target.value))} placeholder="Optional" /></Field>
+            <Field label="Bathrooms"><input data-testid="input-unit-bathrooms" className={inputClass} type="number" min="0" step="0.5" value={draft.bathrooms ?? ''} onChange={(event) => change('bathrooms', event.target.value === '' ? null : Number(event.target.value))} placeholder="Optional" /></Field>
+          </>}
         </section>
 
         <section className="border-t border-[#ebe8e2] pt-5" data-testid="section-unit-facilities">
           <div className="mb-3"><p className="text-[12px] font-semibold text-[#35332e]">Unit facilities</p><p className="mt-1 text-[10px] text-[#938f86]">Shared property facilities stay on the property. Select features specific to this unit.</p></div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {HOME_FACILITIES.map((facility) => {
+            {(mixedUse ? COMMERCIAL_FACILITIES : HOME_FACILITIES).map((facility) => {
               const selected = selectedFacilities.has(facility.value);
               return <button key={facility.value} type="button" data-testid={`button-unit-facility-${facility.value}`} aria-pressed={selected} onClick={() => toggleFacility(facility.value)} className={`flex min-h-9 items-center gap-2 rounded-[8px] border px-2.5 text-left text-[10px] font-medium ${selected ? 'border-[#b9cabe] bg-[#edf4ee] text-[#4d6a59]' : 'border-[#e7e4de] bg-white text-[#69665f] hover:bg-[#f8faf7]'}`}><span className={`flex h-4 w-4 items-center justify-center rounded-[4px] border ${selected ? 'border-[#63816e] bg-[#63816e] text-white' : 'border-[#d5d2ca] bg-white'}`}>{selected && <Check size={10} />}</span>{facility.label}</button>;
             })}
@@ -346,7 +364,7 @@ function UnitForm({
         </section>
 
         <section className="border-t border-[#ebe8e2] pt-5" data-testid="section-unit-ownership">
-          <div className="mb-3"><p className="text-[12px] font-semibold text-[#35332e]">Ownership</p><p className="mt-1 text-[10px] text-[#938f86]">{apartmentBuilding ? 'Building owners are assigned from the unit scope and cannot be changed here.' : 'Unit ownership shares must total 100%.'}</p></div>
+           <div className="mb-3"><p className="text-[12px] font-semibold text-[#35332e]">Ownership</p><p className="mt-1 text-[10px] text-[#938f86]">{apartmentBuilding ? 'Building owners are assigned from the unit scope and cannot be changed here.' : 'Unit ownership shares must total 100%.'}</p></div>
           {apartmentBuilding ? (
             <div data-testid="unit-inherited-owner" className={`rounded-[10px] border px-3.5 py-3 ${inheritedOwner ? 'border-[#dbe5dc] bg-[#f4f7f2]' : 'border-[#efd2ce] bg-[#fff7f5]'}`}>
               <div className="flex items-center gap-2"><DoorOpen size={14} className="text-[#698373]" /><p className="text-[11px] font-semibold text-[#3f4f43]">{inheritedContact?.name ?? 'Building owner not resolved'}</p><span className="ml-auto text-[9px] font-semibold uppercase tracking-[.08em] text-[#869087]">Locked</span></div>
@@ -450,12 +468,12 @@ export default function PropertyUnitManager({
   onSave: (payload: UnitSavePayload, existingUnit: Unit | null) => Promise<void>;
   onDelete: (unit: Unit) => Promise<void>;
 }) {
-  const supportsUnits = property.property_type === 'multifamily_units' || property.property_type === 'apartment_building';
+  const supportsUnits = property.property_type === 'multifamily_units' || property.property_type === 'apartment_building' || property.property_type === 'mixed_use_development';
   const [formUnit, setFormUnit] = useState<Unit | null | undefined>(undefined);
   const [deleteUnit, setDeleteUnit] = useState<Unit | null>(null);
   const [feedback, setFeedback] = useState('');
   const propertyUnits = units.filter((unit) => unit.property_id === property.id);
-  const atCapacity = property.units_count !== null && propertyUnits.length >= property.units_count;
+  const atCapacity = property.property_type !== 'mixed_use_development' && property.units_count !== null && propertyUnits.length >= property.units_count;
   if (!supportsUnits) return null;
 
   const deleteSelectedUnit = async () => {
@@ -472,8 +490,8 @@ export default function PropertyUnitManager({
   return <>
     <section data-testid={`property-units-${property.id}`} className="mt-4 border-t border-[#f0eeeb] pt-3">
       <div className="flex items-center justify-between gap-2">
-        <div><p className="text-[10px] font-semibold uppercase tracking-[.08em] text-[#77736d]">Units</p><p data-testid={`text-property-unit-count-${property.id}`} className="mt-1 text-[10px] text-[#9a958d]">{propertyUnits.length} of {property.units_count ?? 0} added</p></div>
-        <button type="button" data-testid={`button-add-unit-${property.id}`} onClick={() => { setFeedback(''); setFormUnit(null); }} disabled={atCapacity} className="flex h-8 items-center gap-1.5 rounded-[8px] bg-[#55776b] px-3 text-[10px] font-semibold text-white hover:bg-[#456357] disabled:cursor-not-allowed disabled:bg-[#b9c4bb]"><Plus size={12} />Add unit</button>
+        <div><p className="text-[10px] font-semibold uppercase tracking-[.08em] text-[#77736d]">{property.property_type === 'mixed_use_development' ? 'Spaces' : 'Units'}</p><p data-testid={`text-property-unit-count-${property.id}`} className="mt-1 text-[10px] text-[#9a958d]">{property.property_type === 'mixed_use_development' ? `${propertyUnits.length} recorded` : `${propertyUnits.length} of ${property.units_count ?? 0} added`}</p></div>
+        <button type="button" data-testid={`button-add-unit-${property.id}`} onClick={() => { setFeedback(''); setFormUnit(null); }} disabled={atCapacity} className="flex h-8 items-center gap-1.5 rounded-[8px] bg-[#55776b] px-3 text-[10px] font-semibold text-white hover:bg-[#456357] disabled:cursor-not-allowed disabled:bg-[#b9c4bb]"><Plus size={12} />{property.property_type === 'mixed_use_development' ? 'Add space' : 'Add unit'}</button>
       </div>
       {atCapacity && <p data-testid={`text-property-unit-capacity-${property.id}`} className="mt-2 text-[10px] text-[#8c887f]">The configured unit capacity has been reached.</p>}
       {feedback && <p className="mt-2 text-[10px] text-[#a33e34]">{feedback}</p>}
@@ -484,7 +502,7 @@ export default function PropertyUnitManager({
           const facilitySummary = [...(unit.facilities ?? []), ...(unit.custom_facilities ?? [])].slice(0, 3).join(', ');
           const floorLabel = unit.floor === null ? null : unit.floor === 0 ? 'Ground floor' : `Floor ${unit.floor}`;
           return <article key={unit.id} data-testid={`row-property-unit-${unit.id}`} className="flex items-center justify-between gap-3 rounded-[9px] border border-[#eeece7] bg-[#fdfdfc] px-3 py-2.5">
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-[11px] font-semibold text-[#37342f]">{unit.unit_number}</p><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${unit.status === 'occupied' ? 'bg-[#edf7ef] text-[#327443]' : 'bg-[#eef5fb] text-[#39709c]'}`}>{unit.status === 'occupied' ? 'Rented' : 'Not rented'}</span>{floorLabel && <span className="text-[9px] text-[#8d8981]">{floorLabel}</span>}</div><p className="mt-1 truncate text-[9px] text-[#928d84]">{tenantName ? `Renter: ${tenantName}` : unit.room_count ? `${unit.room_count} rooms` : 'No renter'}{unit.monthly_rent ? ` · ${formatMoney(unit.monthly_rent)}/mo` : ''}{facilitySummary ? ` · ${facilitySummary}` : ''}</p></div>
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-[11px] font-semibold text-[#37342f]">{unit.unit_number}</p>{property.property_type === 'mixed_use_development' && <span className="rounded-full bg-[#f1f0ec] px-2 py-0.5 text-[9px] font-medium text-[#77736d]">{unitTypeLabel(unit.unit_type)}</span>}<span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${unit.status === 'occupied' ? 'bg-[#edf7ef] text-[#327443]' : 'bg-[#eef5fb] text-[#39709c]'}`}>{unit.status === 'occupied' ? 'Rented' : 'Not rented'}</span>{floorLabel && <span className="text-[9px] text-[#8d8981]">{floorLabel}</span>}</div><p className="mt-1 truncate text-[9px] text-[#928d84]">{tenantName ? `Renter: ${tenantName}` : unit.room_count ? `${unit.room_count} rooms` : 'No renter'}{unit.monthly_rent ? ` · ${formatMoney(unit.monthly_rent)}/mo` : ''}{facilitySummary ? ` · ${facilitySummary}` : ''}</p></div>
             <div className="flex shrink-0 gap-1"><button type="button" aria-label={`Edit unit ${unit.unit_number}`} data-testid={`button-edit-unit-${unit.id}`} onClick={() => { setFeedback(''); setFormUnit(unit); }} className="flex h-7 w-7 items-center justify-center rounded-[7px] border border-[#e6e3dd] text-[#77736d] hover:bg-[#f2f0ec]"><Pencil size={11} /></button><button type="button" aria-label={`Delete unit ${unit.unit_number}`} data-testid={`button-delete-unit-${unit.id}`} onClick={() => setDeleteUnit(unit)} className="flex h-7 w-7 items-center justify-center rounded-[7px] border border-[#efd0cc] text-[#a33e34] hover:bg-[#fff2f0]"><Trash2 size={11} /></button></div>
           </article>;
         })}

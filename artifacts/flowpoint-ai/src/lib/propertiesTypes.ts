@@ -25,6 +25,10 @@ export interface Property {
   lease_start_date: string | null;
   lease_end_date: string | null;
   amenities: string | null;
+  office_in_building: boolean | null;
+  office_floor: number | null;
+  commercial_space_type: string | null;
+  mixed_use_components: string[] | null;
   property_rules: string | null;
   parking_information: string | null;
   access_information: string | null;
@@ -84,6 +88,54 @@ export const APARTMENT_BUILDING_FACILITIES = [
   { value: 'rooftop', label: 'Rooftop' },
 ] as const;
 
+export const COMMERCIAL_FACILITIES = [
+  { value: 'parking_lot', label: 'Parking lot' },
+  { value: 'elevator', label: 'Elevator' },
+  { value: 'security_system', label: 'Security system' },
+  { value: 'reception', label: 'Reception' },
+  { value: 'conference_room', label: 'Conference room' },
+  { value: 'shared_restrooms', label: 'Shared restrooms' },
+  { value: 'loading_dock', label: 'Loading dock' },
+  { value: 'hvac', label: 'HVAC' },
+] as const;
+
+export const RETAIL_CENTER_TYPES = [
+  { value: 'shopping_mall', label: 'Shopping mall' },
+  { value: 'strip_mall', label: 'Strip mall' },
+  { value: 'shopping_center', label: 'Shopping center' },
+  { value: 'outlet_center', label: 'Outlet center' },
+  { value: 'market_hall', label: 'Market hall' },
+  { value: 'other', label: 'Other' },
+] as const;
+
+export const RETAIL_UNIT_TYPES = [
+  { value: 'boutique', label: 'Boutique' },
+  { value: 'convenience_store', label: 'Convenience store' },
+  { value: 'supermarket', label: 'Supermarket' },
+  { value: 'department_store', label: 'Department store' },
+  { value: 'pharmacy', label: 'Pharmacy' },
+  { value: 'showroom', label: 'Showroom' },
+  { value: 'other', label: 'Other' },
+] as const;
+
+export const HOSPITALITY_SPACE_TYPES = [
+  { value: 'restaurant', label: 'Restaurant' },
+  { value: 'cafe', label: 'Cafe' },
+  { value: 'bar', label: 'Bar' },
+  { value: 'hotel', label: 'Hotel' },
+  { value: 'event_venue', label: 'Event venue' },
+  { value: 'food_hall', label: 'Food hall' },
+  { value: 'other', label: 'Other' },
+] as const;
+
+export const MIXED_USE_COMPONENTS = [
+  { value: 'apartment', label: 'Residential apartments' },
+  { value: 'office', label: 'Office spaces' },
+  { value: 'retail_store', label: 'Retail stores' },
+  { value: 'restaurant_hospitality', label: 'Restaurants & hospitality' },
+  { value: 'warehouse', label: 'Warehouses' },
+] as const;
+
 export const PROPERTY_STATUSES = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
@@ -131,6 +183,10 @@ export const blankProperty: PropertyDraft = {
   lease_start_date: null,
   lease_end_date: null,
   amenities: '',
+  office_in_building: null,
+  office_floor: null,
+  commercial_space_type: null,
+  mixed_use_components: [],
   property_rules: '',
   parking_information: '',
   access_information: '',

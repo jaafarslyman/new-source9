@@ -5,7 +5,7 @@ import {
   UserRound, Users, Wrench, X, Zap,
 } from 'lucide-react';
 import {
-  propertyAddress, propertyCategoryLabel, propertyStatusLabel, propertyTypeLabel, type Property,
+  HOSPITALITY_SPACE_TYPES, MIXED_USE_COMPONENTS, propertyAddress, propertyCategoryLabel, propertyStatusLabel, propertyTypeLabel, RETAIL_CENTER_TYPES, type Property,
 } from '@/lib/propertiesTypes';
 import type { Contact, ContactPropertyRelationship } from '@/lib/contactsTypes';
 import type { Unit } from '@/lib/unitsTypes';
@@ -84,11 +84,15 @@ interface PropertyProfileModalProps {
 export default function PropertyProfileModal({ property, contacts, ownerships, units, onClose, onEdit, onDelete }: PropertyProfileModalProps) {
   const propertyUnits = units.filter((unit) => unit.property_id === property.id);
   const isSingleHome = property.property_type === 'single_family_home';
-  const totalUnits = isSingleHome ? 1 : property.units_count;
-  const occupiedUnits = isSingleHome ? Number(Boolean(property.is_rented)) : propertyUnits.filter((unit) => unit.status === 'occupied').length;
-  const vacantUnits = isSingleHome ? Number(!property.is_rented) : propertyUnits.filter((unit) => unit.status === 'vacant').length;
+  const isMixedUse = property.property_type === 'mixed_use_development';
+  const propertyLevelRental = isSingleHome || ['office_building', 'retail_center', 'restaurant_hospitality'].includes(property.property_type ?? '');
+  const totalUnits = propertyLevelRental ? 1 : isMixedUse ? propertyUnits.length : property.units_count;
+  const occupiedUnits = propertyLevelRental ? Number(Boolean(property.is_rented)) : propertyUnits.filter((unit) => unit.status === 'occupied').length;
+  const vacantUnits = propertyLevelRental ? Number(!property.is_rented) : propertyUnits.filter((unit) => unit.status === 'vacant').length;
   const propertyRenter = ownerships.find((relationship) => relationship.property_id === property.id && !relationship.unit_id && relationship.relationship_type === 'tenant');
   const renterName = contacts.find((contact) => String(contact.id) === String(propertyRenter?.contact_id))?.name;
+  const commercialSpaceType = [...RETAIL_CENTER_TYPES, ...HOSPITALITY_SPACE_TYPES].find((item) => item.value === property.commercial_space_type)?.label;
+  const mixedUseSummary = property.mixed_use_components?.map((value) => MIXED_USE_COMPONENTS.find((item) => item.value === value)?.label ?? value).join(', ');
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
@@ -120,7 +124,7 @@ export default function PropertyProfileModal({ property, contacts, ownerships, u
             <div className="grid gap-4 lg:grid-cols-[1.1fr_.9fr]">
               <section className="rounded-[14px] border border-[#e9e6e1] bg-white p-5">
                 <div className="mb-3 flex items-center justify-between"><div><h3 className="text-[13px] font-semibold text-[#302d28]">Overview</h3><p className="mt-1 text-[11px] text-[#9a958d]">The essentials your team needs at a glance.</p></div><Building2 size={16} className="text-[#aaa59d]" /></div>
-                <div className="grid gap-x-7 sm:grid-cols-2"><InfoRow label="Category" value={propertyCategoryLabel(property.property_category)} /><InfoRow label="Property type" value={propertyTypeLabel(property.property_type)} /><InfoRow label="Units" value={totalUnits} /><InfoRow label="Building floors" value={property.floor_count} /><InfoRow label="Rooms" value={property.room_count} /><InfoRow label="Address line 1" value={property.address_line1} /><InfoRow label="Address line 2" value={property.address_line2} /><InfoRow label="City" value={property.city} /><InfoRow label="State / region" value={property.state} /><InfoRow label="Postal code" value={property.postal_code} /><InfoRow label="Country" value={property.country} /></div>
+                <div className="grid gap-x-7 sm:grid-cols-2"><InfoRow label="Category" value={propertyCategoryLabel(property.property_category)} /><InfoRow label="Property type" value={propertyTypeLabel(property.property_type)} />{property.property_type === 'office_building' && <><InfoRow label="Inside a building" value={property.office_in_building === null ? null : property.office_in_building ? 'Yes' : 'No'} /><InfoRow label="Office floor" value={property.office_in_building ? property.office_floor === 0 ? 'Ground floor' : property.office_floor : null} /></>}{(property.property_type === 'retail_center' || property.property_type === 'restaurant_hospitality') && <InfoRow label={property.property_type === 'retail_center' ? 'Retail center type' : 'Hospitality space type'} value={commercialSpaceType} />}{isMixedUse && <InfoRow label="Included uses" value={mixedUseSummary} />}<InfoRow label={isMixedUse ? 'Spaces' : 'Units'} value={totalUnits} /><InfoRow label="Building floors" value={property.floor_count} /><InfoRow label="Rooms" value={property.room_count} /><InfoRow label="Address line 1" value={property.address_line1} /><InfoRow label="Address line 2" value={property.address_line2} /><InfoRow label="City" value={property.city} /><InfoRow label="State / region" value={property.state} /><InfoRow label="Postal code" value={property.postal_code} /><InfoRow label="Country" value={property.country} /></div>
                 <div className="mt-3 border-t border-[#f0eeeb] pt-1"><InfoRow label="Description" value={property.description} /></div>
               </section>
               <section className="rounded-[14px] border border-[#e9e6e1] bg-white p-5">

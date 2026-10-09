@@ -176,10 +176,12 @@ function PropertyCard({
 }) {
   const propertyUnits = units.filter((unit) => unit.property_id === property.id);
   const isSingleHome = property.property_type === 'single_family_home';
-  const rented = isSingleHome
+  const mixedUse = property.property_type === 'mixed_use_development';
+  const propertyLevelRental = isSingleHome || ['office_building', 'retail_center', 'restaurant_hospitality'].includes(property.property_type ?? '');
+  const rented = propertyLevelRental
     ? Number(Boolean(property.is_rented))
     : propertyUnits.filter((unit) => unit.status === 'occupied').length;
-  const notRented = isSingleHome
+  const notRented = propertyLevelRental
     ? Number(!property.is_rented)
     : propertyUnits.filter((unit) => unit.status === 'vacant').length;
   const ownerCount = new Set(relationships
@@ -198,8 +200,8 @@ function PropertyCard({
     <div className="mt-3 border-t border-[#f0eeeb] pt-3">
       <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap items-center gap-1.5"><span className="text-[10px] font-medium text-[#6e6a62]">{propertyCategoryLabel(property.property_category)}</span><span className="h-1 w-1 rounded-full bg-[#d2cec7]" /><span className="text-[10px] text-[#77736d]">{propertyTypeLabel(property.property_type)}</span></div><StatusPill status={property.status} /></div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-[10px]">
-        <div><p className="text-[#aaa59d]">Units</p><p className="mt-0.5 font-semibold text-[#625e57]">{isSingleHome ? 1 : property.units_count ?? '—'}</p></div>
-        <div><p className="text-[#aaa59d]">Rented</p><p className="mt-0.5 font-semibold text-[#625e57]">{rented}</p></div>
+        <div><p className="text-[#aaa59d]">{mixedUse ? 'Spaces' : 'Units'}</p><p className="mt-0.5 font-semibold text-[#625e57]">{propertyLevelRental ? 1 : mixedUse ? propertyUnits.length : property.units_count ?? '—'}</p></div>
+        <div><p className="text-[#aaa59d]">{propertyLevelRental ? 'Rented' : 'Rented units'}</p><p className="mt-0.5 font-semibold text-[#625e57]">{rented}</p></div>
         <div><p className="text-[#aaa59d]">Owners</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-[#625e57]"><Users size={10} />{ownerCount}</p></div>
       </div>
       {notRented > 0 && <p data-testid={`text-property-not-rented-${property.id}`} className="mt-2 text-[9px] text-[#939087]">{notRented} not rented</p>}
@@ -332,7 +334,7 @@ export default function PropertiesPage() {
         ownership_scope: owner.ownership_scope || null,
       });
     }
-    if (propertyType === 'single_family_home' && renterDraft) {
+    if (['single_family_home', 'office_building', 'retail_center', 'restaurant_hospitality'].includes(propertyType ?? '') && renterDraft) {
       const contact = await resolveContact(renterDraft, 'tenant', resolvedContacts);
       relationshipRows.push({
         contact_id: contact.id,
@@ -408,7 +410,7 @@ export default function PropertiesPage() {
     const resolvedContacts = contactCache ?? [...contacts];
     try {
       const rows: Array<Record<string, unknown>> = [];
-      if (payload.draft.unit_type === 'house') {
+      if (payload.owners.length > 0) {
         for (const owner of payload.owners) {
           const contact = await resolveContact(owner, 'owner', resolvedContacts);
           rows.push({
